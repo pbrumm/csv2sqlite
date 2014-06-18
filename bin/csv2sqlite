@@ -1,0 +1,92 @@
+#!/usr/bin/env ruby
+require 'rubygems'
+require 'csv'
+require 'active_record'
+require 'active_support/all'
+require 'sqlite3'
+
+db = ARGV[0]
+csvs = ARGV[1..-1]
+if ARGV.size < 2
+  puts "csv2sqlite <dbname> <csvfile> [<csvfile> ...]"
+  exit 0
+end
+config = %{
+development:
+  adapter: sqlite3
+  database: #{db}
+  pool: 5
+  timeout: 5000
+}
+ActiveRecord::Base.configurations = YAML::load(config)
+ActiveRecord::Base.establish_connection('development')
+
+csvs.each {|file|
+  file_io = nil
+  if file.include?(".xls")
+    name = File.basename(file, ".xls").classify
+    temp_file = Tempfile.new(["conv_", ".csv"])
+    `ssconvert --import-type=Gnumeric_Excel:excel #{file} #{temp_file.path} > /dev/null 2>&1`
+
+    temp_file.rewind
+    file = temp_file.path
+  elsif file.include?(".xlsx")
+    name = File.basename(file, ".xlsx").classify
+    temp_file = Tempfile.new(["conv_", ".csv"])
+    `ssconvert --import-type=Gnumeric_Excel:xlsx #{file} #{temp_file.path} > /dev/null 2>&1`
+
+    temp_file.rewind
+    file = temp_file.path
+  else
+    name = File.basename(file, ".csv").classify
+  end
+  puts name
+  count = 0
+  ActiveRecord::Base.transaction do
+    cols = {}
+    
+    CSV.foreach file, :headers => true, encoding: "ISO-8859-1:UTF-8",  header_converters: ->(col){
+      col = col.downcase.gsub(/[^a-z0-9_]/, "") 
+      if cols[col]  
+        col += "#{cols.size}"
+      end
+      if col == "type"
+        col += "_#{cols.size}"
+      end
+      if col == "add"
+        col += "_#{cols.size}"
+      end
+      if col == "order"
+        col += "_#{cols.size}"
+      end
+      if col == "guid"
+        col += "_#{cols.size}"
+      end
+      cols[col] = true 
+      #p col
+      col
+    } do |row|
+      if count == 0
+        columns = (row.to_hash.keys + ['guid']).map {|r| "#{r} varchar" }.join(", ")
+        insert_statement = "CREATE TABLE #{name.downcase.pluralize} (#{columns});" 
+        ActiveRecord::Base.connection.execute(insert_statement)
+      end
+      s = %{ 
+        class #{name} < ActiveRecord::Base
+          self.table_name = "#{name.downcase.pluralize}"
+        end
+      }
+      Kernel.eval(s)
+      klass = name.constantize
+      print "."
+      hash = Hash[row]
+      hash['guid'] = SecureRandom.uuid
+      #p hash
+      klass.reset_column_information
+      klass.create! hash
+      count += 1
+    end
+  end 
+  puts "\nDone."
+}
+
