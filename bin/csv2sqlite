@@ -72,12 +72,12 @@ csvs.each {|file|
         ActiveRecord::Base.connection.execute(insert_statement)
       end
       s = %{ 
-        class #{name} < ActiveRecord::Base
+        class Csv2Sqlite#{name} < ActiveRecord::Base
           self.table_name = "#{name.downcase.pluralize}"
         end
       }
       Kernel.eval(s)
-      klass = name.constantize
+      klass = "Csv2Sqlite#{name}".constantize
       print "."
       hash = Hash[row]
       hash['guid'] = SecureRandom.uuid
