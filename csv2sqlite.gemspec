@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.email         = ["pete@petebrumm.com"]
   spec.summary       = %q{Provides a simple command line tool for converting directory of csv's to sqlite tables}
   spec.description   = %q{if ssconvert from gnumeric is installed it can convert xls and xlsx as well (single sheet)}
-  spec.homepage      = ""
+  spec.homepage      = "https://github.com/pbrumm/csv2sqlite"
   spec.license       = "MIT"
 
   spec.files         = `git ls-files -z`.split("\x0")
