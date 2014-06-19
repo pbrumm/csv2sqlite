@@ -4,6 +4,7 @@ require 'csv'
 require 'active_record'
 require 'active_support/all'
 require 'sqlite3'
+require 'fileutils'
 
 db = ARGV[0]
 csvs = ARGV[1..-1]
@@ -20,72 +21,93 @@ development:
 }
 ActiveRecord::Base.configurations = YAML::load(config)
 ActiveRecord::Base.establish_connection('development')
-
+RESERVED_COLUMN_NAMES = ["abort", "action", "add", "after", "all", "alter", "analyze", "and", "as", "asc", "attach", "autoincrement", "before", "begin", "between", "by", "cascade", "case", "cast", "check", "collate", "column", "commit", "conflict", "constraint", "create", "cross", "current_date", "current_time", "current_timestamp", "database", "default", "deferrable", "deferred", "delete", "desc", "detach", "distinct", "drop", "each", "else", "end", "escape", "except", "exclusive", "exists", "explain", "fail", "for", "foreign", "from", "full", "glob", "group", "having", "if", "ignore", "immediate", "in", "index", "indexed", "initially", "inner", "insert", "instead", "intersect", "into", "is", "isnull", "join", "key", "left", "like", "limit", "match", "natural", "no", "not", "notnull", "null", "of", "offset", "on", "or", "order", "outer", "plan", "pragma", "primary", "query", "raise", "recursive", "references", "regexp", "reindex", "release", "rename", "replace", "restrict", "right", "rollback", "row", "savepoint", "select", "set", "table", "temp", "temporary", "then", "to", "transaction", "trigger", "union", "unique", "update", "using", "vacuum", "values", "view", "virtual", "when", "where", "with", "without"]
 csvs.each {|file|
+  files = [{path: file, name: nil}]
   file_io = nil
-  if file.match(/\.xlsx$/).present?
-    name = File.basename(file, ".xlsx").classify
-    temp_file = Tempfile.new(["conv_", ".csv"])
-    `ssconvert --import-type=Gnumeric_Excel:xlsx #{file} #{temp_file.path} > /dev/null 2>&1`
-
-    temp_file.rewind
-    file = temp_file.path
-  elsif file.match(/\.xls$/).present?
-    name = File.basename(file, ".xls").classify
-    temp_file = Tempfile.new(["conv_", ".csv"])
-    `ssconvert --import-type=Gnumeric_Excel:excel #{file} #{temp_file.path} > /dev/null 2>&1`
-
-    temp_file.rewind
-    file = temp_file.path
-  else
-    name = File.basename(file, ".csv").classify
-  end
-  puts name
-  count = 0
-  ActiveRecord::Base.transaction do
-    cols = {}
+  name = nil
+  if file.match(/\.xlsx?$/).present?
     
-    CSV.foreach file, :headers => true, encoding: "ISO-8859-1:UTF-8",  header_converters: ->(col){
-      col = col.downcase.gsub(/[^a-z0-9_]/, "") 
-      if cols[col]  
-        col += "#{cols.size}"
-      end
-      if col == "type"
-        col += "_#{cols.size}"
-      end
-      if col == "add"
-        col += "_#{cols.size}"
-      end
-      if col == "order"
-        col += "_#{cols.size}"
-      end
-      if col == "guid"
-        col += "_#{cols.size}"
-      end
-      cols[col] = true 
-      #p col
-      col
-    } do |row|
-      if count == 0
-        columns = (row.to_hash.keys + ['guid']).map {|r| "#{r} varchar" }.join(", ")
-        insert_statement = "CREATE TABLE #{name.downcase.pluralize} (#{columns});" 
-        ActiveRecord::Base.connection.execute(insert_statement)
-      end
-      s = %{ 
-        class Csv2Sqlite#{name} < ActiveRecord::Base
-          self.table_name = "#{name.downcase.pluralize}"
-        end
-      }
-      Kernel.eval(s)
-      klass = "Csv2Sqlite#{name}".constantize
-      print "."
-      hash = Hash[row]
-      hash['guid'] = SecureRandom.uuid
-      #p hash
-      klass.reset_column_information
-      klass.create! hash
-      count += 1
+    temp_file = Tempfile.new(["conv_", ".csv"])
+    if file.match(/\.xlsx$/).present?
+      name = File.basename(file, ".xlsx")
+      `ssconvert --import-type=Gnumeric_Excel:xlsx -S #{file} #{temp_file.path} > /dev/null 2>&1`
+    else
+      name = File.basename(file, ".xls")
+      `ssconvert --import-type=Gnumeric_Excel:excel -S #{file} #{temp_file.path} > /dev/null 2>&1`
     end
+
+    files = Dir["#{temp_file.path}.*"]
+    if files.size > 1
+      files = Dir["#{temp_file.path}.*"].map {|path|
+        ending = path.match(/\.([0-9]+)/)[1]
+        {path: path, name: "#{name}Sheet#{ending}".classify.gsub(/[^a-zA-Z0-9]/, ""), delete: true}
+      }
+    else
+      files = Dir["#{temp_file.path}.*"].map {|path|
+        {path: path, name: name.classify.gsub(/[^a-zA-Z0-9]/, ""), delete: true}
+      }
+    end
+  else
+    files[0][:name] = File.basename(file, ".csv").gsub(/[^a-zA-Z0-9]/, "").classify
+  end
+  
+  ActiveRecord::Base.transaction do
+    
+    
+    files.each {|options|
+      cols = {}
+      file = options[:path]
+      name = options[:name]
+      p name
+      count = 0
+      klass = nil
+      CSV.foreach(file, :headers => true, encoding: "ISO-8859-1:UTF-8",  header_converters: ->(col){
+        col = (col || "").downcase.gsub(/[^a-z0-9_]/, "") 
+        if col == ""
+          col += "col#{cols.size}"
+        end
+        if ["class", "guid", 'type'].include?(col)
+          col += "#{cols.size}"
+        end
+        if RESERVED_COLUMN_NAMES.include?(col)
+          col += "#{cols.size}"
+        end
+        if cols[col]  
+          col += "#{cols.size}"
+        end
+        cols[col] = true 
+        #p col
+        col
+      }) do |row|
+        if count == 0
+          columns = (row.to_hash.keys + ['guid']).map {|r| "#{r} varchar" }.join(", ")
+          insert_statement = "CREATE TABLE #{name.downcase.pluralize} (#{columns});" 
+          ActiveRecord::Base.connection.execute(insert_statement)
+          s = %{ 
+            class Csv2Sqlite#{name} < ActiveRecord::Base
+              self.table_name = "#{name.downcase.pluralize}"
+            end
+          }
+          Kernel.eval(s)
+          klass = "Csv2Sqlite#{name}".constantize
+          klass.reset_column_information
+        end
+        
+        
+        print "."
+        hash = row.to_hash
+        hash['guid'] = SecureRandom.uuid
+        klass.create!(hash)
+        
+        count += 1
+      end
+      if options[:delete] == true
+        FileUtils.rm(file)
+      end
+    }
+
+    
   end 
   puts "\nDone."
 }
