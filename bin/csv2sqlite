@@ -23,17 +23,17 @@ ActiveRecord::Base.establish_connection('development')
 
 csvs.each {|file|
   file_io = nil
-  if file.include?(".xls")
-    name = File.basename(file, ".xls").classify
-    temp_file = Tempfile.new(["conv_", ".csv"])
-    `ssconvert --import-type=Gnumeric_Excel:excel #{file} #{temp_file.path} > /dev/null 2>&1`
-
-    temp_file.rewind
-    file = temp_file.path
-  elsif file.include?(".xlsx")
+  if file.match(/\.xlsx$/).present?
     name = File.basename(file, ".xlsx").classify
     temp_file = Tempfile.new(["conv_", ".csv"])
     `ssconvert --import-type=Gnumeric_Excel:xlsx #{file} #{temp_file.path} > /dev/null 2>&1`
+
+    temp_file.rewind
+    file = temp_file.path
+  elsif file.match(/\.xls$/).present?
+    name = File.basename(file, ".xls").classify
+    temp_file = Tempfile.new(["conv_", ".csv"])
+    `ssconvert --import-type=Gnumeric_Excel:excel #{file} #{temp_file.path} > /dev/null 2>&1`
 
     temp_file.rewind
     file = temp_file.path
