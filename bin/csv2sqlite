@@ -21,6 +21,29 @@ development:
 }
 ActiveRecord::Base.configurations = YAML::load(config)
 ActiveRecord::Base.establish_connection('development')
+
+if c = ::ActiveRecord::Base.connection
+  # see http://www.sqlite.org/pragma.html for details
+ 
+  # Page size of the database. The page size must be a power of two between 512 and 65536 inclusive
+    
+  c.execute 'PRAGMA main.page_size=4096;'
+ 
+  # Suggested maximum number of database disk pages that SQLite will hold in memory at once per open database file
+  c.execute 'PRAGMA main.cache_size=10000;'
+
+  # Database connection locking-mode. The locking-mode is either NORMAL or EXCLUSIVE
+  c.execute 'PRAGMA main.locking_mode=EXCLUSIVE;'
+
+  # Setting of the "synchronous" flag, "NORMAL" means sync less often but still more than none
+  c.execute 'PRAGMA main.synchronous=NORMAL;'
+
+  # Journal mode for database, WAL=write-ahead log
+  puts c.execute 'PRAGMA main.journal_mode=WAL;'
+
+  # Storage location for temporary tables, indices, views, triggers
+  c.execute 'PRAGMA main.temp_store = MEMORY;'
+end
 RESERVED_COLUMN_NAMES = ["abort", "action", "add", "after", "all", "alter", "analyze", "and", "as", "asc", "attach", "autoincrement", "before", "begin", "between", "by", "cascade", "case", "cast", "check", "collate", "column", "commit", "conflict", "constraint", "create", "cross", "current_date", "current_time", "current_timestamp", "database", "default", "deferrable", "deferred", "delete", "desc", "detach", "distinct", "drop", "each", "else", "end", "escape", "except", "exclusive", "exists", "explain", "fail", "for", "foreign", "from", "full", "glob", "group", "having", "if", "ignore", "immediate", "in", "index", "indexed", "initially", "inner", "insert", "instead", "intersect", "into", "is", "isnull", "join", "key", "left", "like", "limit", "match", "natural", "no", "not", "notnull", "null", "of", "offset", "on", "or", "order", "outer", "plan", "pragma", "primary", "query", "raise", "recursive", "references", "regexp", "reindex", "release", "rename", "replace", "restrict", "right", "rollback", "row", "savepoint", "select", "set", "table", "temp", "temporary", "then", "to", "transaction", "trigger", "union", "unique", "update", "using", "vacuum", "values", "view", "virtual", "when", "where", "with", "without"]
 csvs.each {|file|
   files = [{path: file, name: nil}]
