@@ -13,14 +13,12 @@ if ARGV.size < 2
   exit 0
 end
 config = %{
-development:
-  adapter: sqlite3
-  database: #{db}
-  pool: 5
-  timeout: 5000
+adapter: sqlite3
+database: #{db}
+pool: 5
+timeout: 5000
 }
-ActiveRecord::Base.configurations = YAML::load(config)
-ActiveRecord::Base.establish_connection('development')
+ActiveRecord::Base.establish_connection(YAML::load(config))
 
 if c = ::ActiveRecord::Base.connection
   # see http://www.sqlite.org/pragma.html for details
